@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Kendrew FPS</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: linear-gradient(135deg, #0f0f0f, #1a1a2e);
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+
+    #menu {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+    }
+
+    button {
+      padding: 15px 30px;
+      margin: 10px;
+      font-size: 20px;
+      cursor: pointer;
+      border: none;
+      border-radius: 8px;
+      background: #ff0033;
+      color: white;
+    }
+
+    #gameCanvas {
+      display: block;
+    }
+
+    #adminPanel {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: #111;
+      padding: 15px;
+      border: 2px solid red;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="menu">
+  <h1>Kendrew FPS</h1>
+  <button onclick="startGame('free')">Free Mode</button>
+  <button onclick="startGame('mission')">Mission Mode</button>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="adminPanel">
+  <h3>OWNER PANEL</h3>
+  <button onclick="alert('God Mode Enabled')">God Mode</button>
+  <button onclick="alert('All Enemies Removed')">Clear Enemies</button>
+</div>
+
+<script>
+let ownerName = "Kendrew";
+let currentUser = "Kendrew";
+
+let canvas = document.getElementById("gameCanvas");
+let ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let player = { x: 300, y: 300, size: 20 };
+let enemies = [];
+let mode = "free";
+
+function startGame(selectedMode) {
+  mode = selectedMode;
+  document.getElementById("menu").style.display = "none";
+  spawnEnemies();
+  gameLoop();
+}
+
+function spawnEnemies() {
+  enemies = [];
+  for (let i = 0; i < 5; i++) {
+    enemies.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      size: 20,
+      aware: false,
+      awareTimer: 0
+    });
+  }
+}
+
+document.addEventListener("click", (e) => {
+  enemies.forEach(enemy => {
+    let dx = enemy.x - player.x;
+    let dy = enemy.y - player.y;
+    let dist = Math.sqrt(dx*dx + dy*dy);
+
+    if (dist < 200) {
+      if (!enemy.aware) {
+        enemy.aware = true;
+        enemy.awareTimer = 3600; // 60 seconds at 60fps
+      } else {
+        alert("They saw you!");
+      }
+    }
+  });
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() === "m") {
+    if (currentUser === ownerName) {
+      let panel = document.getElementById("adminPanel");
+      panel.style.display = panel.style.display === "none" ? "block" : "none";
+    }
+  }
+});
+
+function updateEnemies() {
+  enemies.forEach(enemy => {
+    if (enemy.aware) {
+      let dx = player.x - enemy.x;
+      let dy = player.y - enemy.y;
+      let dist = Math.sqrt(dx*dx + dy*dy);
+
+      if (dist > 5) {
+        enemy.x += dx / dist;
+        enemy.y += dy / dist;
+      }
+
+      enemy.awareTimer--;
+      if (enemy.awareTimer <= 0) {
+        enemy.aware = false;
+      }
+    }
+  });
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "blue";
+  ctx.fillRect(player.x, player.y, player.size, player.size);
+
+  enemies.forEach(enemy => {
+    ctx.fillStyle = enemy.aware ? "red" : "green";
+    ctx.fillRect(enemy.x, enemy.y, enemy.size, enemy.size);
+  });
+}
+
+function gameLoop() {
+  updateEnemies();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+</script>
+
+</body>
+</html>
