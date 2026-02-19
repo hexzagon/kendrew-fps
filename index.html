@@ -4,10 +4,12 @@
   <title>PROJECT : HEXAGON FANCY ONLINE</title>
   <style>
     body { margin: 0; overflow: hidden; background: #000; font-family: Arial; }
-    #hud { position: absolute; bottom: 10px; left: 10px; color: #fff; }
+    #hud { position: absolute; bottom: 10px; left: 10px; color: #fff; font-size: 18px; }
     #missionText { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); color: white; font-size: 22px; }
     #adminPanel { position:absolute; top:10px; right:10px; width:360px; padding:10px; background:rgba(0,0,0,0.7); color:white; display:none; }
     #adminPanel button { display:block; margin:5px 0; }
+    #menu { position:absolute; width:100%; height:100%; display:flex; justify-content:center; align-items:center; flex-direction:column; color:white; background:black; }
+    #menu button { padding:10px 25px; font-size:18px; margin:5px; cursor:pointer; }
   </style>
 </head>
 <body>
@@ -38,12 +40,11 @@
 let scene, camera, renderer;
 let socket, myId;
 let otherPlayers = {};
-let bullets = [];
 let playerModel, weaponModel;
 
+// Player state
 let keys = {}, yaw=0, pitch=0;
 let playerHealth=100, ammo=30;
-
 let gamemode = "free";
 
 function startGame() {
@@ -53,58 +54,93 @@ function startGame() {
   animate();
 }
 
+// ====================== INIT SCENE ======================
 function initScene() {
   scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,1000);
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
   camera.position.set(0,1.6,5);
+  
   renderer = new THREE.WebGLRenderer({ antialias:true });
-  renderer.setSize(window.innerWidth,window.innerHeight);
+  renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
 
-  scene.add(new THREE.HemisphereLight(0xffffff,0x444444));
+  // LIGHTING
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+  dirLight.position.set(5,10,5);
+  scene.add(dirLight);
+  const ambientLight = new THREE.AmbientLight(0x404040, 1.5);
+  scene.add(ambientLight);
 
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(200,200),
-    new THREE.MeshStandardMaterial({ color: 0x222222 }));
+  // FLOOR + GRID
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(200,200), new THREE.MeshStandardMaterial({ color:0x222222 }));
   floor.rotation.x = -Math.PI/2;
   scene.add(floor);
+  const grid = new THREE.GridHelper(200, 50);
+  scene.add(grid);
 
+  // PLACEHOLDER PLAYER
+  const placeholder = new THREE.Mesh(
+    new THREE.BoxGeometry(1,2,1),
+    new THREE.MeshStandardMaterial({ color: 0x00ff00 })
+  );
+  placeholder.position.set(0,1,0);
+  scene.add(placeholder);
+
+  // LOAD GLTF MODELS
   loadModels();
   setupControls();
 }
 
 function loadModels() {
   const loader = new THREE.GLTFLoader();
+  
+  // PLAYER MODEL
   loader.load(
     'https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/Avocado/glTF/Avocado.gltf',
-    (gltf) => { playerModel = gltf.scene; },
+    (gltf) => {
+      playerModel = gltf.scene;
+      playerModel.scale.set(0.5,0.5,0.5);
+      playerModel.position.set(0,0,0);
+      scene.add(playerModel);
+    },
     undefined, console.error
   );
+
+  // WEAPON MODEL
   loader.load(
     'https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/Box/glTF/Box.gltf',
-    (gltf) => { weaponModel = gltf.scene; },
+    (gltf) => {
+      weaponModel = gltf.scene;
+      weaponModel.scale.set(0.5,0.5,0.5);
+      scene.add(weaponModel);
+    },
     undefined, console.error
   );
 }
 
+// ====================== CONTROLS ======================
 function setupControls() {
-  document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-  document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+  document.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
+  document.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
   document.body.addEventListener('click', ()=>document.body.requestPointerLock());
-  document.addEventListener('mousemove', e => {
-    if(document.pointerLockElement===document.body) {
-      yaw -= e.movementX * 0.002;
-      pitch -= e.movementY * 0.002;
+  document.addEventListener('mousemove', e=>{
+    if(document.pointerLockElement===document.body){
+      yaw -= e.movementX*0.002;
+      pitch -= e.movementY*0.002;
+      pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2,pitch));
     }
   });
 }
 
-function updatePlayerMovement() {
-  camera.rotation.order="YXZ";
+// ====================== PLAYER MOVEMENT ======================
+function updatePlayerMovement(){
+  camera.rotation.order = "YXZ";
   camera.rotation.y = yaw;
   camera.rotation.x = pitch;
 
   let forward = new THREE.Vector3();
-  camera.getWorldDirection(forward); forward.y=0; forward.normalize();
+  camera.getWorldDirection(forward);
+  forward.y = 0; forward.normalize();
   let right = new THREE.Vector3(); right.crossVectors(forward,camera.up).normalize();
 
   if(keys["w"]) camera.position.add(forward.clone().multiplyScalar(0.1));
@@ -115,81 +151,67 @@ function updatePlayerMovement() {
   sendPositionUpdate();
 }
 
-function sendPositionUpdate() {
-  if(socket && socket.readyState===WebSocket.OPEN) {
-    socket.send(JSON.stringify({
-      type: 'update',
-      x: camera.position.x,
-      y: camera.position.y,
-      z: camera.position.z,
-      yaw, pitch,
-      health: playerHealth
-    }));
-  }
+// ====================== HUD ======================
+function updateHUD(){
+  document.getElementById("hud").innerText = `Health: ${playerHealth} | Ammo: ${ammo}`;
 }
 
-// CONNECT TO SERVER
+// ====================== SOCKET ======================
 function connectServer() {
   socket = new WebSocket('ws://localhost:8080');
   myId = Date.now() + Math.random();
 
-  socket.onmessage = (msg) => {
+  socket.onmessage = (msg)=>{
     const data = JSON.parse(msg.data);
-
-    if(data.type === "init") {
-      otherPlayers = data.players;
-    }
-    else if(data.type === "update") {
-      if(data.id!==myId) {
-        if(!otherPlayers[data.id]) otherPlayers[data.id] = {};
+    if(data.type==="init") otherPlayers = data.players;
+    else if(data.type==="update"){
+      if(data.id!==myId){
+        if(!otherPlayers[data.id]) otherPlayers[data.id]={};
         Object.assign(otherPlayers[data.id], data);
       }
-    }
-    else if(data.type === "remove") {
-      delete otherPlayers[data.id];
-    }
+    } else if(data.type==="remove"){ delete otherPlayers[data.id]; }
   };
 }
 
-// DRAW PLAYERS
-function drawOtherPlayers() {
-  for(let id in otherPlayers) {
-    if(id===myId) continue;
+function sendPositionUpdate(){
+  if(socket && socket.readyState===WebSocket.OPEN){
+    socket.send(JSON.stringify({
+      type:'update',
+      x:camera.position.x, y:camera.position.y, z:camera.position.z,
+      yaw, pitch, health:playerHealth
+    }));
+  }
+}
 
+// ====================== DRAW OTHER PLAYERS ======================
+function drawOtherPlayers(){
+  for(let id in otherPlayers){
+    if(id===myId) continue;
     let p = otherPlayers[id];
-    if(!p.mesh && playerModel) {
+    if(!p.mesh && playerModel){
       let clone = playerModel.clone();
       scene.add(clone);
       p.mesh = clone;
     }
-    if(p.mesh) {
-      p.mesh.position.set(p.x,p.y,p.z);
-      p.mesh.rotation.y = p.yaw;
-    }
+    if(p.mesh){ p.mesh.position.set(p.x,p.y,p.z); p.mesh.rotation.y=p.yaw; }
   }
 }
 
-// ADMIN COMMAND
-function sendAdmin(cmd) {
-  if(socket && socket.readyState===WebSocket.OPEN) {
+// ====================== ADMIN ======================
+function sendAdmin(cmd){
+  if(socket && socket.readyState===WebSocket.OPEN){
     socket.send(JSON.stringify({ type:'admin', cmd }));
   }
 }
 
-// HUD
-function updateHUD() {
-  document.getElementById("hud").innerText = `Health: ${playerHealth} | Ammo: ${ammo}`;
-}
-
-// GAME LOOP
-function animate() {
+// ====================== GAME LOOP ======================
+function animate(){
   requestAnimationFrame(animate);
-  if(playerModel) drawOtherPlayers();
   updatePlayerMovement();
+  drawOtherPlayers();
   updateHUD();
   renderer.render(scene,camera);
 }
 </script>
-
 </body>
 </html>
